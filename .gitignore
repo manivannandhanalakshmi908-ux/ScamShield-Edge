@@ -14,4 +14,13 @@
 .cxx
 local.properties
 **/build/
+.idea/app/src/main/assets/llama_3_2_1b_xnnpack_spinquant.pte
+*.backup
+MainActivity_before_Llama_integration.kt
+MainActivity_duplicate_backup.kt
+MainActivity_recovered.kt
 .idea/
+app/src/main/assets/llama_3_2_1b_xnnpack_spinquant.pte
+ersmasilAndroidStudioProjectsScamShieldEdge
+rcmainjavacomexamplescamshieldedgeui*
+t*

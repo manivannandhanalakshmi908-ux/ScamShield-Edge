@@ -21,6 +21,8 @@ import com.example.scamshieldedge.detector.DetectionResult
 import com.example.scamshieldedge.detector.RiskLevel
 import com.example.scamshieldedge.detector.SmsDetector
 import com.example.scamshieldedge.explain.TemplateExplainer
+import com.example.scamshieldedge.explain.OnDeviceLlama
+import androidx.compose.ui.platform.LocalContext
 
 private val Navy = Color(0xFF101B35)
 private val Blue = Color(0xFF4169E1)
@@ -44,6 +46,23 @@ fun ScamShieldApp() {
         mutableStateOf<DetectionResult?>(null)
     }
     var notice by remember { mutableStateOf("") }
+
+    var modelLoading by remember { mutableStateOf(false) }
+    var modelReady by remember { mutableStateOf(false) }
+    var modelStatus by remember { mutableStateOf("Local AI model is not loaded.") }
+
+    var aiGenerating by remember { mutableStateOf(false) }
+    var aiExplanation by remember { mutableStateOf("") }
+    var aiError by remember { mutableStateOf("") }
+
+    val context = LocalContext.current
+    val llama = remember { OnDeviceLlama(context) }
+
+    DisposableEffect(llama) {
+        onDispose {
+            llama.close()
+        }
+    }
 
     val explanation = detectionResult?.let {
         TemplateExplainer.explain(it)
@@ -244,7 +263,7 @@ fun ScamShieldApp() {
                         } else {
                             report.evidence.forEach { item ->
                                 Text(
-                                    text = "• ${item.id.replace('_', ' ')} (+${item.weight})",
+                                    text = "ΓÇó ${item.id.replace('_', ' ')} (+${item.weight})",
                                     color = Color.DarkGray,
                                     fontSize = 14.sp
                                 )
@@ -269,7 +288,112 @@ fun ScamShieldApp() {
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "ON-DEVICE AI EXPLANATION",
+                            color = Navy,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
 
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Button(
+                            onClick = {
+                                modelLoading = true
+                                modelStatus = "Loading local AI model..."
+                                aiError = ""
+
+                                llama.load { error ->
+                                    modelLoading = false
+
+                                    if (error == null) {
+                                        modelReady = true
+                                        modelStatus = "Local AI model loaded successfully."
+                                    } else {
+                                        modelStatus = "Model loading failed."
+                                        aiError = error
+                                    }
+                                }
+                            },
+                            enabled = !modelLoading && !modelReady,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Text(
+                                if (modelLoading) "Loading Model..."
+                                else if (modelReady) "Model Loaded"
+                                else "Load Local AI Model"
+                            )
+                        }
+
+                        Text(
+                            text = modelStatus,
+                            color = Color.DarkGray,
+                            fontSize = 12.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Button(
+                            onClick = {
+                                aiGenerating = true
+                                aiExplanation = ""
+                                aiError = ""
+
+                                val evidenceText =
+                                    if (report.evidence.isEmpty()) {
+                                        "No strong warning signs detected."
+                                    } else {
+                                        report.evidence.joinToString("\n") {
+                                            "${it.description} (+${it.weight})"
+                                        }
+                                    }
+
+                                llama.explain(
+                                    sms = message.trim(),
+                                    risk = "${report.level.name} RISK (${report.score}/100)",
+                                    evidence = evidenceText
+                                ) { result, error ->
+                                    aiGenerating = false
+
+                                    if (error != null) {
+                                        aiError = error
+                                    } else {
+                                        aiExplanation = result.orEmpty()
+                                    }
+                                }
+                            },
+                            enabled = modelReady && !aiGenerating,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Text(
+                                if (aiGenerating) "Generating Explanation..."
+                                else "Generate AI Explanation"
+                            )
+                        }
+
+                        if (aiExplanation.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = aiExplanation,
+                                color = Navy,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        if (aiError.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = aiError,
+                                color = Color(0xFFC62828),
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = "RECOMMENDED SAFE ACTIONS",
                             color = Navy,
@@ -317,7 +441,7 @@ fun ScamShieldApp() {
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "SCAMSHIELD EDGE • VERSION 1.0",
+                text = "SCAMSHIELD EDGE ΓÇó VERSION 1.0",
                 color = Color.Gray,
                 fontSize = 11.sp,
                 modifier = Modifier.align(Alignment.CenterHorizontally)

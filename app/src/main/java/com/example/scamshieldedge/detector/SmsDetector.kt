@@ -24,7 +24,6 @@ object SmsDetector {
             "account password"
         ),
 
-
         Ids.UPI_PAYMENT to listOf(
             "approve payment",
             "collect request",
@@ -42,9 +41,14 @@ object SmsDetector {
             "account blocked",
             "account suspended",
             "account will be blocked",
+            "account will be suspended",
             "account will be closed",
             "bank account blocked",
-            "card will be blocked"
+            "bank account suspended",
+            "bank account will be blocked",
+            "bank account will be suspended",
+            "card will be blocked",
+            "card will be suspended"
         ),
 
         Ids.KYC_UPDATE to listOf(
@@ -106,13 +110,38 @@ object SmsDetector {
     private val urlPattern =
         Regex("""(?i)\b(?:https?://|www\.)[^\s<>"']+""")
 
+    private fun hasUnnegatedMatch(text: String, keyword: String): Boolean {
+        var searchFrom = 0
+
+        while (searchFrom < text.length) {
+            val index = text.indexOf(keyword, searchFrom)
+
+            if (index < 0) return false
+
+            val prefix = text.substring(maxOf(0, index - 24), index).trimEnd()
+
+            val isNegated = Regex(
+                """(?:\bnever|\bdo not|\bdon't|\bdoes not|\bnot)\s*$"""
+            ).containsMatchIn(prefix)
+
+            if (!isNegated) return true
+
+            searchFrom = index + keyword.length
+        }
+
+        return false
+    }
     fun analyze(message: String): DetectionResult {
+
         val text = message.lowercase()
         val evidence = mutableListOf<Evidence>()
         val urls = extractUrls(message)
 
+        // Check suspicious SMS language
         for ((id, keywords) in patterns) {
-            if (keywords.any { text.contains(it) }) {
+
+            if (keywords.any { keyword -> hasUnnegatedMatch(text, keyword) }) {
+
                 val weight = when (id) {
                     Ids.OTP_REQUEST -> 35
                     Ids.CREDENTIAL_REQUEST -> 35
@@ -129,13 +158,25 @@ object SmsDetector {
                     Evidence(
                         id = id,
                         weight = weight,
-                        description = "Detected suspicious SMS language"
+                        description = when (id) {
+                        Ids.OTP_REQUEST -> "SMS asks you to share or provide an OTP"
+                        Ids.CREDENTIAL_REQUEST -> "SMS asks for sensitive credentials such as a PIN, CVV or password"
+                        Ids.UPI_PAYMENT -> "SMS requests a payment or UPI approval"
+                        Ids.ACCOUNT_THREAT -> "SMS threatens to block, suspend or close an account"
+                        Ids.KYC_UPDATE -> "SMS requests a KYC or identity-document update"
+                        Ids.PRIZE_LURE -> "SMS uses a prize or reward claim to attract the recipient"
+                        Ids.URGENCY -> "SMS uses urgent or time-limited language"
+                        Ids.LINK_LANGUAGE -> "SMS encourages the recipient to use a link"
+                        else -> "Suspicious SMS indicator detected"
+                    }
                     )
                 )
             }
         }
 
+        // Check suspicious URLs
         for (url in urls) {
+
             val host = getHost(url) ?: continue
 
             if (host in shorteners) {
@@ -159,6 +200,7 @@ object SmsDetector {
             }
 
             val tld = host.substringAfterLast('.', "")
+
             if (tld in suspiciousTlds) {
                 evidence.add(
                     Evidence(
@@ -189,8 +231,11 @@ object SmsDetector {
                 )
             }
 
+            // Detect possible brand impersonation
             for ((brand, domains) in officialDomains) {
-                if (brand in host && domains.none {
+
+                if (brand in host &&
+                    domains.none {
                         host == it || host.endsWith(".$it")
                     }
                 ) {
@@ -205,8 +250,14 @@ object SmsDetector {
             }
         }
 
-        val score = evidence.sumOf { it.weight }.coerceIn(0, 100)
+        // Remove duplicate indicators
+        val uniqueEvidence = evidence.distinctBy { it.id }
 
+        // Calculate risk score
+        val score = uniqueEvidence.sumOf { it.weight }
+            .coerceIn(0, 100)
+
+        // Determine risk level
         val level = when {
             score >= 50 -> RiskLevel.HIGH
             score >= 25 -> RiskLevel.MEDIUM
@@ -216,27 +267,36 @@ object SmsDetector {
         return DetectionResult(
             level = level,
             score = score,
-            evidence = evidence,
+            evidence = uniqueEvidence,
             urls = urls
         )
     }
 
+    // Extract URLs from SMS
     private fun extractUrls(message: String): List<String> {
         return urlPattern.findAll(message)
-            .map { it.value.trimEnd('.', ',', '!', '?', ')', ']') }
+            .map {
+                it.value.trimEnd('.', ',', '!', '?', ')', ']')
+            }
             .distinct()
             .toList()
     }
 
+    // Extract domain name from URL
     private fun getHost(url: String): String? {
         return try {
+
             val normalized = if (url.startsWith("www.", true)) {
                 "https://$url"
             } else {
                 url
             }
 
-            URI(normalized).host?.lowercase()?.removePrefix("www.")
+            URI(normalized)
+                .host
+                ?.lowercase()
+                ?.removePrefix("www.")
+
         } catch (e: Exception) {
             null
         }

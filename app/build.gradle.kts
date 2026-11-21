@@ -38,6 +38,15 @@ android {
 
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
+
+    implementation(files("libs/executorch.aar"))
+    implementation("com.facebook.fbjni:fbjni:0.7.0")
+    implementation("com.facebook.soloader:nativeloader:0.10.5")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("com.facebook.fbjni:fbjni:0.7.0")
+    implementation("com.facebook.soloader:nativeloader:0.10.5")
+    implementation("androidx.core:core-ktx:1.13.1")
+
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)
